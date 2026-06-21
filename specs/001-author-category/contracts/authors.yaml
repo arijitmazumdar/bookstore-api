@@ -1,0 +1,107 @@
+openapi: 3.0.3
+info:
+  title: Bookstore Author API
+  version: "1.0"
+  description: Contract updates for derived author category responses.
+paths:
+  /authors:
+    get:
+      summary: List authors
+      responses:
+        "200":
+          description: Successful author list response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AuthorRead"
+    post:
+      summary: Create author
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AuthorWrite"
+      responses:
+        "201":
+          description: Created author with derived category
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthorRead"
+  /authors/{id}:
+    get:
+      summary: Get author by ID
+      parameters:
+        - $ref: "#/components/parameters/AuthorID"
+      responses:
+        "200":
+          description: Successful author detail response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthorRead"
+        "404":
+          description: Author not found
+    put:
+      summary: Update author
+      parameters:
+        - $ref: "#/components/parameters/AuthorID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AuthorWrite"
+      responses:
+        "200":
+          description: Updated author with derived category
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthorRead"
+    delete:
+      summary: Delete author
+      parameters:
+        - $ref: "#/components/parameters/AuthorID"
+      responses:
+        "204":
+          description: Author deleted
+components:
+  parameters:
+    AuthorID:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: integer
+        format: int64
+  schemas:
+    AuthorWrite:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+      additionalProperties: false
+    AuthorRead:
+      type: object
+      required:
+        - id
+        - name
+        - category
+      properties:
+        id:
+          type: integer
+          format: int64
+        name:
+          type: string
+        category:
+          type: string
+          enum:
+            - regular
+            - premium
+      additionalProperties: false

@@ -1,0 +1,10 @@
+*.exe
+*.out
+*.test
+*.db
+.DS_Store
+Thumbs.db
+*.tmp
+*.swp
+.idea/
+.vscode/

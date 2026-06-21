@@ -11,8 +11,10 @@ type Book struct {
 }
 
 type Author struct {
-	ID   int64  `json:"id,omitempty"`
-	Name string `json:"name"`
+	ID         int64  `json:"id,omitempty"`
+	Name       string `json:"name"`
+	Category   string `json:"category"`
+	SoldCopies int64  `json:"-"`
 }
 
 type Customer struct {

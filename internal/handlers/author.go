@@ -8,6 +8,11 @@ import (
 	"bookstore-api/internal/models"
 )
 
+const (
+	authorCategoryRegular = "regular"
+	authorCategoryPremium = "premium"
+)
+
 func (h *Handler) AuthorsHandler(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
@@ -39,7 +44,17 @@ func (h *Handler) AuthorHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) listAuthors(w http.ResponseWriter, r *http.Request) {
-	rows, err := h.db.Query("SELECT id, name FROM authors")
+	rows, err := h.db.Query(`
+		SELECT
+			a.id,
+			a.name,
+			COUNT(p.id) AS sold_copies
+		FROM authors a
+		LEFT JOIN books b ON b.author_id = a.id
+		LEFT JOIN customer_book_purchase p ON p.book_id = b.id
+		GROUP BY a.id, a.name
+		ORDER BY a.id
+	`)
 	if err != nil {
 		h.writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -51,20 +66,25 @@ func (h *Handler) listAuthors(w http.ResponseWriter, r *http.Request) {
 	authors := []models.Author{}
 	for rows.Next() {
 		var author models.Author
-		if err := rows.Scan(&author.ID, &author.Name); err != nil {
+		if err := rows.Scan(&author.ID, &author.Name, &author.SoldCopies); err != nil {
 			h.writeError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
+		author.Category = deriveAuthorCategory(author.SoldCopies)
 		authors = append(authors, author)
+	}
+
+	if err := rows.Err(); err != nil {
+		h.writeError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 
 	h.writeJSON(w, http.StatusOK, authors)
 }
 
 func (h *Handler) getAuthor(w http.ResponseWriter, r *http.Request, id int64) {
-	var author models.Author
-	row := h.db.QueryRow("SELECT id, name FROM authors WHERE id = ?", id)
-	if err := row.Scan(&author.ID, &author.Name); err != nil {
+	author, err := h.authorByID(id)
+	if err != nil {
 		if err == sql.ErrNoRows {
 			h.writeError(w, http.StatusNotFound, "author not found")
 			return
@@ -90,7 +110,13 @@ func (h *Handler) createAuthor(w http.ResponseWriter, r *http.Request) {
 	}
 
 	author.ID, _ = result.LastInsertId()
-	h.writeJSON(w, http.StatusCreated, author)
+	createdAuthor, err := h.authorByID(author.ID)
+	if err != nil {
+		h.writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	h.writeJSON(w, http.StatusCreated, createdAuthor)
 }
 
 func (h *Handler) updateAuthor(w http.ResponseWriter, r *http.Request, id int64) {
@@ -101,13 +127,33 @@ func (h *Handler) updateAuthor(w http.ResponseWriter, r *http.Request, id int64)
 	}
 
 	author.ID = id
-	_, err := h.db.Exec("UPDATE authors SET name = ? WHERE id = ?", author.Name, id)
+	result, err := h.db.Exec("UPDATE authors SET name = ? WHERE id = ?", author.Name, id)
 	if err != nil {
 		h.writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
-	h.writeJSON(w, http.StatusOK, author)
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		h.writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if rowsAffected == 0 {
+		h.writeError(w, http.StatusNotFound, "author not found")
+		return
+	}
+
+	updatedAuthor, err := h.authorByID(id)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			h.writeError(w, http.StatusNotFound, "author not found")
+			return
+		}
+		h.writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	h.writeJSON(w, http.StatusOK, updatedAuthor)
 }
 
 func (h *Handler) deleteAuthor(w http.ResponseWriter, r *http.Request, id int64) {
@@ -118,4 +164,34 @@ func (h *Handler) deleteAuthor(w http.ResponseWriter, r *http.Request, id int64)
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *Handler) authorByID(id int64) (models.Author, error) {
+	var author models.Author
+	row := h.db.QueryRow(`
+		SELECT
+			a.id,
+			a.name,
+			COUNT(p.id) AS sold_copies
+		FROM authors a
+		LEFT JOIN books b ON b.author_id = a.id
+		LEFT JOIN customer_book_purchase p ON p.book_id = b.id
+		WHERE a.id = ?
+		GROUP BY a.id, a.name
+	`, id)
+
+	if err := row.Scan(&author.ID, &author.Name, &author.SoldCopies); err != nil {
+		return models.Author{}, err
+	}
+
+	author.Category = deriveAuthorCategory(author.SoldCopies)
+	return author, nil
+}
+
+func deriveAuthorCategory(soldCopies int64) string {
+	if soldCopies > 500 {
+		return authorCategoryPremium
+	}
+
+	return authorCategoryRegular
 }
